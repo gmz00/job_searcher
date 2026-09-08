@@ -10,9 +10,13 @@ Scraper de Computrabajo.com.ar por keywords, exporta CSV.
 - main.py: orquesta el flujo completo
 
 ## Cómo correr
-python main.py
+uv run main.py
 
 ## Convenciones
 - Delay de 1-2 seg entre requests (no saltarse esto)
 - Siempre usar User-Agent de navegador real
 - Manejar errores de conexión sin crashear todo el script
+
+## Dependencias
+Gestionadas con uv (pyproject.toml + uv.lock). 
+Para agregar una nueva: uv add <paquete>

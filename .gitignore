@@ -1,0 +1,6 @@
+output/*.csv
+seen_ids.json
+keywords_history.json
+__pycache__/
+*.pyc
+.env
