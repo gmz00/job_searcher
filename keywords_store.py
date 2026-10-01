@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-HISTORIAL_PATH = Path("keywords_history.json")
+HISTORIAL_PATH = Path(__file__).parent / "keywords_history.json"
 
 
 def cargar_historial() -> list[str]:

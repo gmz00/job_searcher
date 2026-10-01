@@ -1,8 +1,13 @@
+import random
+import time
+
 from dedup import filtrar_duplicados, guardar_titulos_vistos
 from keywords_store import pedir_keywords
 from output_writer import escribir_csv
 from scraper import scrape_keyword
 from seen_tracker import guardar_seen_ids, marcar_nuevas
+
+DELAY_ENTRE_KEYWORDS = (3.0, 7.0)  # segundos, rango aleatorio
 
 
 def main():
@@ -18,6 +23,11 @@ def main():
 
         print(f"Se encontraron {len(ofertas)} ofertas para '{keyword}'")
         ofertas_totales.extend(ofertas)
+
+        if keyword != keywords[-1]:
+            espera = random.uniform(*DELAY_ENTRE_KEYWORDS)
+            print(f"Esperando {espera:.1f}s antes de la siguiente keyword...")
+            time.sleep(espera)
 
     cantidad_antes_dedup = len(ofertas_totales)
     ofertas_totales = filtrar_duplicados(ofertas_totales)

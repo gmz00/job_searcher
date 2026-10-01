@@ -1,87 +1,117 @@
 import json
+from collections import defaultdict, deque
 from difflib import SequenceMatcher
 from pathlib import Path
 
-TITULOS_VISTOS_PATH = Path("titulos_vistos.json")
+TITULOS_VISTOS_PATH = Path(__file__).parent / "titulos_vistos.json"
+
+# Máximo de registros retenidos en titulos_vistos.json (cola FIFO).
+MAX_TITULOS_VISTOS = 2000
 
 
-def cargar_titulos_vistos() -> list[dict]:
+def cargar_titulos_vistos() -> deque[dict]:
+    """Carga el historial de títulos vistos como una deque de tamaño fijo."""
     if not TITULOS_VISTOS_PATH.exists():
-        return []
+        return deque(maxlen=MAX_TITULOS_VISTOS)
 
     try:
         with open(TITULOS_VISTOS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         print(f"El archivo de titulos_vistos está corrupto o no se pudo leer ({e}), se ignora.")
-        return []
+        return deque(maxlen=MAX_TITULOS_VISTOS)
 
     if not isinstance(data, list):
         print("El archivo de titulos_vistos tiene un formato inválido, se ignora.")
-        return []
+        return deque(maxlen=MAX_TITULOS_VISTOS)
 
-    return data
+    # Al construir la deque con maxlen, si data supera MAX_TITULOS_VISTOS
+    # se descartarán automáticamente los registros más antiguos (izquierda).
+    cola: deque[dict] = deque(maxlen=MAX_TITULOS_VISTOS)
+    cola.extend(data)
+    return cola
 
 
-def _es_similar(titulo_a: str, empresa_a: str, titulo_b: str, empresa_b: str, umbral: float = 0.75) -> bool:
-    if empresa_a.strip().lower() != empresa_b.strip().lower():
-        return False
+def _agrupar_por_empresa(registros: list[dict] | deque[dict]) -> dict[str, list[dict]]:
+    """Devuelve un dict empresa_normalizada -> [registros] para búsqueda O(1)."""
+    grupos: dict[str, list[dict]] = defaultdict(list)
+    for r in registros:
+        empresa = (r.get("empresa") or "").strip().lower()
+        if empresa:
+            grupos[empresa].append(r)
+    return grupos
 
-    ratio = SequenceMatcher(None, titulo_a, titulo_b).ratio()
-    return ratio >= umbral
+
+def _es_similar(titulo_a: str, titulo_b: str, umbral: float = 0.75) -> bool:
+    """Compara sólo títulos; la igualdad de empresa ya fue verificada en el llamador."""
+    return SequenceMatcher(None, titulo_a, titulo_b).ratio() >= umbral
 
 
 def filtrar_duplicados(ofertas: list[dict]) -> list[dict]:
+    """
+    Filtra ofertas duplicadas en dos pasos:
+    1. Agrupa por empresa para reducir el espacio de comparación (evita O(n²) global).
+    2. Dentro del mismo grupo aplica SequenceMatcher sólo contra ofertas de igual empresa.
+    """
     vistos_previos = cargar_titulos_vistos()
 
-    resultado = []
-    for oferta in ofertas:
-        titulo = oferta.get("titulo") or ""
-        empresa = oferta.get("empresa") or ""
+    # Índice de títulos previos agrupados por empresa para búsqueda rápida.
+    grupos_previos = _agrupar_por_empresa(vistos_previos)
 
+    resultado: list[dict] = []
+    # Índice incremental de las ofertas aceptadas en esta pasada.
+    grupos_resultado: dict[str, list[dict]] = defaultdict(list)
+
+    for oferta in ofertas:
+        titulo = (oferta.get("titulo") or "").strip()
+        empresa = (oferta.get("empresa") or "").strip()
+        empresa_key = empresa.lower()
+
+        # Sin título o empresa no podemos deduplicar; se acepta directamente.
         if not titulo or not empresa:
             resultado.append(oferta)
             continue
 
         es_duplicada = False
 
-        for conservada in resultado:
-            titulo_c = conservada.get("titulo") or ""
-            empresa_c = conservada.get("empresa") or ""
-            if not titulo_c or not empresa_c:
-                continue
-            if _es_similar(titulo, empresa, titulo_c, empresa_c):
+        # — Paso 1: comparar contra las ofertas ya aceptadas en esta ejecución ——
+        for candidato in grupos_resultado[empresa_key]:
+            titulo_c = (candidato.get("titulo") or "").strip()
+            if _es_similar(titulo, titulo_c):
                 es_duplicada = True
                 break
 
+        # — Paso 2: comparar contra el historial persistido ————————————————————
         if not es_duplicada:
-            for visto in vistos_previos:
-                titulo_v = visto.get("titulo") or ""
-                empresa_v = visto.get("empresa") or ""
-                if not titulo_v or not empresa_v:
-                    continue
-                if _es_similar(titulo, empresa, titulo_v, empresa_v):
+            for visto in grupos_previos.get(empresa_key, []):
+                titulo_v = (visto.get("titulo") or "").strip()
+                if _es_similar(titulo, titulo_v):
                     es_duplicada = True
                     break
 
         if not es_duplicada:
             resultado.append(oferta)
+            grupos_resultado[empresa_key].append(oferta)
 
     return resultado
 
 
 def guardar_titulos_vistos(ofertas: list[dict]) -> None:
-    vistos_previos = cargar_titulos_vistos()
+    """
+    Persiste los títulos de las ofertas aceptadas. Usa una cola FIFO con
+    MAX_TITULOS_VISTOS elementos: los registros más antiguos se descartan
+    automáticamente al superar el límite.
+    """
+    cola = cargar_titulos_vistos()  # ya tiene maxlen=MAX_TITULOS_VISTOS
 
-    nuevos = [
-        {"titulo": oferta.get("titulo", ""), "empresa": oferta.get("empresa", "")}
-        for oferta in ofertas
-    ]
-
-    combinado = vistos_previos + nuevos
+    for oferta in ofertas:
+        titulo = oferta.get("titulo", "")
+        empresa = oferta.get("empresa", "")
+        if titulo or empresa:
+            cola.append({"titulo": titulo, "empresa": empresa})
 
     with open(TITULOS_VISTOS_PATH, "w", encoding="utf-8") as f:
-        json.dump(combinado, f, indent=2, ensure_ascii=False)
+        json.dump(list(cola), f, indent=2, ensure_ascii=False)
 
 
 if __name__ == "__main__":

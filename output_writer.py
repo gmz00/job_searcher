@@ -2,7 +2,7 @@ import csv
 from datetime import date
 from pathlib import Path
 
-OUTPUT_DIR = Path("output")
+OUTPUT_DIR = Path(__file__).parent / "output"
 COLUMNAS = [
     "id",
     "titulo",
@@ -26,9 +26,13 @@ def escribir_csv(ofertas: list[dict]) -> str:
     fecha = date.today().isoformat()
     ruta = OUTPUT_DIR / f"{fecha}.csv"
 
-    with open(ruta, "w", newline="", encoding="utf-8") as f:
+    archivo_nuevo = not ruta.exists()
+    modo = "w" if archivo_nuevo else "a"
+
+    with open(ruta, modo, newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNAS)
-        writer.writeheader()
+        if archivo_nuevo:
+            writer.writeheader()
         for oferta in ofertas:
             fila = {columna: oferta.get(columna, "") for columna in COLUMNAS}
             writer.writerow(fila)

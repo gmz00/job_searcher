@@ -1,7 +1,10 @@
+﻿# Runtime output -- never commit scraped data
 output/*.csv
+# State files -- local only, contain personal search history
 seen_ids.json
 keywords_history.json
 titulos_vistos.json
+# Python artifacts
 __pycache__/
 *.pyc
 .env
